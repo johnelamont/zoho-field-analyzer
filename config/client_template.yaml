@@ -1,0 +1,72 @@
+# Zoho CRM Configuration Template
+# Copy this file and rename it to {client_name}.yaml
+
+# Client identification - KEEP client_name value simple, it will be a subdirectory
+client_name: "client_template"
+description: "Description of this client/organization"
+
+# Zoho API Credentials
+# To get these credentials:
+# 1. Open Chrome DevTools (F12) → Network tab
+# 2. Click any Zoho CRM function
+# 3. Find successful request (200 status)
+# 4. Copy the following headers:
+zoho_credentials:
+  # Full Cookie header value from the request
+  cookie: "YOUR_COOKIE_HEADER_HERE"
+  
+  # x-zcsrf-token value (include the crmcsrfparam= prefix)
+  csrf_token: "crmcsrfparam=YOUR_CSRF_TOKEN_HERE"
+  
+  # x-crm-org value (your organization ID)
+  org_id: "YOUR_ORG_ID_HERE"
+
+# Extraction settings
+extraction:
+  # Which data types to extract
+  enabled_extractors:
+    - functions
+    - workflows
+    - blueprints
+    - modules
+  
+  # Rate limiting (seconds between requests)
+  request_delay: 0.5
+  
+  # Retry settings
+  max_retries: 3
+  retry_delay: 1.0
+
+# Output settings
+output:
+  # Where to save extracted data
+  data_dir: "data"
+  
+  # Where to save analysis results
+  analysis_dir: "output"
+  
+  # Log settings
+  log_dir: "logs"
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+
+# Analysis settings
+analysis:
+  # Field tracking options
+  track_field_updates: true
+  track_field_reads: true
+  track_field_validations: true
+  
+  # Dependency graph options
+  generate_dependency_graph: true
+  max_dependency_depth: 5
+
+# Notes and metadata
+metadata:
+  created_date: null
+  last_updated: null
+  notes: |
+    Add any notes about this client configuration here.
+    For example:
+    - Special workflows to pay attention to
+    - Known issues or quirks
+    - Important modules or fields
