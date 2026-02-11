@@ -120,7 +120,8 @@ class ZohoAPIClient:
         return None
     
     def paginated_get(self, endpoint: str, start_param: str = 'start',
-                     limit: int = 50, max_items: Optional[int] = None) -> list:
+                     limit: int = 50, max_items: Optional[int] = None,
+                     extra_params: Optional[Dict[str, str]] = None) -> list:
         """
         Get paginated results from Zoho API
         
@@ -129,6 +130,7 @@ class ZohoAPIClient:
             start_param: Name of the pagination start parameter
             limit: Items per page
             max_items: Maximum items to fetch (None = all)
+            extra_params: Additional query parameters to include
             
         Returns:
             List of all items from all pages
@@ -139,6 +141,10 @@ class ZohoAPIClient:
         
         while True:
             params = {start_param: start, 'limit': limit}
+            
+            # Add any extra parameters
+            if extra_params:
+                params.update(extra_params)
             
             logger.info(f"Fetching page {page} (items {start}-{start+limit-1})...")
             data = self.get(endpoint, params=params)

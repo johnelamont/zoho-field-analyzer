@@ -32,10 +32,12 @@ class FunctionsExtractor(BaseExtractor):
         """
         logger.info("Fetching all functions...")
         
+        # Add type=org parameter as in original pull_scripts.py
         functions = self.client.paginated_get(
             endpoint='settings/functions',
             start_param='start',
-            limit=50
+            limit=50,
+            extra_params={'type': 'org'}
         )
         
         logger.info(f"Found {len(functions)} total functions")
@@ -132,11 +134,11 @@ class FunctionsExtractor(BaseExtractor):
                     })
                     
                     self.stats['successful'] += 1
-                    logger.info(f"  ✓ Saved")
+                    logger.info(f"  [OK] Saved")
                     
                 else:
                     reason = "No script in response"
-                    logger.warning(f"  ✗ {reason}")
+                    logger.warning(f"  [FAIL] {reason}")
                     failed_items.append({
                         'name': func_name,
                         'id': func_id,
@@ -146,7 +148,7 @@ class FunctionsExtractor(BaseExtractor):
                     
             except Exception as e:
                 reason = str(e)
-                logger.error(f"  ✗ {reason}")
+                logger.error(f"  [FAIL] {reason}")
                 failed_items.append({
                     'name': func_name,
                     'id': func_id,
