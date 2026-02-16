@@ -1,7 +1,7 @@
 # Zoho CRM Configuration Template
 # Copy this file and rename it to {client_name}.yaml
 
-# Client identification - KEEP client_name value simple, it will be a subdirectory
+# Client identification
 client_name: "client_template"
 description: "Description of this client/organization"
 
@@ -21,6 +21,20 @@ zoho_credentials:
   # x-crm-org value (your organization ID)
   org_id: "YOUR_ORG_ID_HERE"
 
+# Rate limiting settings
+# Controls delays and cooldown pauses to avoid Zoho's rate limits
+rate_limiting:
+  # Base delay between transition requests (seconds)
+  base_delay: 4.0
+  
+  # Cooldown pause settings (for blueprint transitions)
+  # Zoho has a rolling window rate limit (~100 requests per 5 minutes)
+  # Taking periodic breaks prevents hitting this limit
+  cooldown:
+    enabled: true
+    after_requests: 76       # Pause after this many transitions
+    duration: 180            # Pause for this many seconds (3 minutes)
+
 # Extraction settings
 extraction:
   # Which data types to extract
@@ -30,7 +44,7 @@ extraction:
     - blueprints
     - modules
   
-  # Rate limiting (seconds between requests)
+  # Legacy request delay (for non-blueprint extractors)
   request_delay: 0.5
   
   # Retry settings

@@ -96,7 +96,7 @@ def create_api_client(config: Dict[str, Any]) -> ZohoAPIClient:
 def run_extraction(client_name: str, extractor_names: List[str], 
                    config_dir: Path = None, base_data_dir: Path = None,
                    blueprint_id: str = None, blueprint_module: str = None,
-                   with_transitions: bool = False) -> Dict[str, Any]:
+                   with_transitions: bool = False, with_field_updates: bool = False) -> Dict[str, Any]:
     """
     Run data extraction for specified extractors
     
@@ -105,9 +105,6 @@ def run_extraction(client_name: str, extractor_names: List[str],
         extractor_names: List of extractor names to run
         config_dir: Configuration directory
         base_data_dir: Base data directory
-        blueprint_id: Optional specific blueprint ID (blueprints only)
-        blueprint_module: Module name for blueprint (required with blueprint_id)
-        with_transitions: Whether to extract detailed transition info (blueprints only)
         
     Returns:
         Extraction results
@@ -131,6 +128,8 @@ def run_extraction(client_name: str, extractor_names: List[str],
     logger.info(f"Extractors: {', '.join(extractor_names)}")
     if with_transitions:
         logger.info(f"With transitions: Yes (slower, more complete)")
+    if with_field_updates:
+        logger.info(f"With field updates: Yes (slower, more complete)")
     logger.info("")
     
     # Create API client
@@ -167,6 +166,14 @@ def run_extraction(client_name: str, extractor_names: List[str],
                     module=blueprint_module,
                     with_transitions=with_transitions
                 )
+            # WorkflowsExtractor needs special handling for with_field_updates
+            elif extractor_name == 'workflows':
+                extractor = extractor_class(
+                    client,
+                    output_dir,
+                    client_name,
+                    with_field_updates=with_field_updates
+                )
             else:
                 extractor = extractor_class(client, output_dir, client_name)
             
@@ -202,12 +209,6 @@ Examples:
   
   # Extract specific data types
   python -m src.extractors.main --client acme_corp --extract functions workflows
-  
-  # Extract blueprints with detailed transition information
-  python -m src.extractors.main --client acme_corp --extract blueprints --with-transitions
-  
-  # Extract single blueprint with transitions
-  python -m src.extractors.main --client acme_corp --extract blueprints --blueprint-id 123456 --blueprint-module Potentials --with-transitions
   
   # List available clients
   python -m src.extractors.main --list-clients
@@ -268,6 +269,12 @@ Examples:
         help='Extract detailed transition information (blueprints only, slower)'
     )
     
+    parser.add_argument(
+        '--with-field-updates',
+        action='store_true',
+        help='Extract detailed field update information (workflows only, slower)'
+    )
+    
     args = parser.parse_args()
     
     # List clients
@@ -325,7 +332,8 @@ Examples:
             base_data_dir=args.data_dir,
             blueprint_id=args.blueprint_id,
             blueprint_module=args.blueprint_module,
-            with_transitions=args.with_transitions
+            with_transitions=args.with_transitions,
+            with_field_updates=args.with_field_updates
         )
         
         # Print summary

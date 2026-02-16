@@ -17,7 +17,8 @@ class BlueprintsExtractor(BaseExtractor):
     
     def __init__(self, client: ZohoAPIClient, output_dir: Path, client_name: str,
                  org_id: str, blueprint_id: Optional[str] = None, 
-                 module: Optional[str] = None, with_transitions: bool = False):
+                 module: Optional[str] = None, with_transitions: bool = False,
+                 rate_limit_config: Optional[Dict[str, Any]] = None):
         """
         Initialize blueprints extractor
         
@@ -29,6 +30,7 @@ class BlueprintsExtractor(BaseExtractor):
             blueprint_id: Optional specific blueprint ID to extract
             module: Optional module name (required if blueprint_id provided)
             with_transitions: Whether to extract detailed transition information
+            rate_limit_config: Rate limiting configuration from YAML
         """
         super().__init__(client, output_dir, client_name)
         self.blueprints_dir = output_dir / 'blueprints'
@@ -39,6 +41,14 @@ class BlueprintsExtractor(BaseExtractor):
         self.blueprint_id = blueprint_id
         self.module = module
         self.with_transitions = with_transitions
+        
+        # Rate limiting configuration
+        self.rate_limit_config = rate_limit_config or {}
+        self.base_delay = self.rate_limit_config.get('base_delay', 4.0)
+        cooldown_config = self.rate_limit_config.get('cooldown', {})
+        self.cooldown_enabled = cooldown_config.get('enabled', True)
+        self.cooldown_after = cooldown_config.get('after_requests', 76)
+        self.cooldown_duration = cooldown_config.get('duration', 180)  # 3 minutes default
     
     def get_extractor_name(self) -> str:
         return "blueprints"
@@ -65,18 +75,35 @@ class BlueprintsExtractor(BaseExtractor):
         try:
             response = self.client.session.get(url, params=params)
             
+            logger.info(f"Response status: {response.status_code}")
+            logger.info(f"Response content-type: {response.headers.get('Content-Type', 'unknown')}")
+            
             if response.status_code == 200:
-                data = response.json()
-                blueprints = data.get('Processes', [])
-                logger.info(f"Found {len(blueprints)} total blueprints")
-                return blueprints
+                # Check if we got HTML instead of JSON (credentials issue)
+                content_type = response.headers.get('Content-Type', '')
+                if 'html' in content_type.lower():
+                    logger.error("Got HTML response instead of JSON - credentials likely expired")
+                    logger.error(f"Response preview: {response.text[:500]}")
+                    return []
+                
+                try:
+                    data = response.json()
+                    blueprints = data.get('Processes', [])
+                    logger.info(f"Found {len(blueprints)} total blueprints")
+                    return blueprints
+                except ValueError as json_err:
+                    logger.error(f"JSON parsing failed: {json_err}")
+                    logger.error(f"Response body: {response.text[:500]}")
+                    return []
             else:
                 logger.error(f"Error getting blueprints: {response.status_code}")
-                logger.error(response.text[:500])
+                logger.error(f"Response body: {response.text[:500]}")
                 return []
                 
         except Exception as e:
             logger.error(f"Exception getting blueprints: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return []
     
     def get_blueprint_details(self, blueprint_id: str, module: str) -> Optional[Dict[str, Any]]:
@@ -137,13 +164,44 @@ class BlueprintsExtractor(BaseExtractor):
             response = self.client.session.get(url, params=params)
             
             if response.status_code == 200:
-                return response.json()
+                # Check if we got HTML instead of JSON (rate limiting)
+                content_type = response.headers.get('Content-Type', '')
+                if 'html' in content_type.lower():
+                    logger.warning(f"      Rate limited! Got HTML instead of JSON")
+                    logger.warning(f"      Sleeping 5 seconds and retrying...")
+                    import time
+                    time.sleep(5)
+                    # Retry once
+                    response = self.client.session.get(url, params=params)
+                    if response.status_code != 200:
+                        logger.warning(f"      Retry failed: {response.status_code}")
+                        return None
+                
+                try:
+                    data = response.json()
+                    if not data:
+                        logger.warning(f"      Empty response for transition {transition_id}")
+                        return None
+                    return data
+                except Exception as e:
+                    logger.warning(f"      Could not parse JSON response: {e}")
+                    return None
             else:
-                logger.warning(f"Error getting transition {transition_id}: {response.status_code}")
+                logger.warning(f"      Error getting transition {transition_id}: {response.status_code}")
+                # Only log first 200 chars to avoid HTML spam
+                body_preview = response.text[:200] if response.text else "No body"
+                logger.warning(f"      Response body: {body_preview}")
+                
+                # If 400 with HTML, likely rate limited
+                if response.status_code == 400 and '<html>' in response.text.lower():
+                    logger.warning(f"      Detected rate limiting (HTML error page)")
+                
                 return None
                 
         except Exception as e:
-            logger.warning(f"Exception getting transition {transition_id}: {e}")
+            logger.warning(f"      Exception getting transition {transition_id}: {e}")
+            import traceback
+            logger.warning(traceback.format_exc())
             return None
     
     def extract_field_updates_from_transition(self, transition_details: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -154,27 +212,62 @@ class BlueprintsExtractor(BaseExtractor):
             transition_details: Full transition details response
             
         Returns:
-            List of field updates with labels and values
+            List of field updates with labels, IDs, and column names
         """
         field_updates = []
         
-        # Get field label mappings
-        field_vs_label = transition_details.get('FieldVsLabel', {})
-        
-        # Get field update actions
-        actions = transition_details.get('Actions', {})
-        field_update_actions = actions.get('Fieldupdate', [])
-        
-        for update in field_update_actions:
-            field_label = update.get('fieldLabel')
-            field_value = update.get('fieldValue')
+        try:
+            # Get field mappings (note: FieldVsLable has typo in Zoho API)
+            field_vs_label = transition_details.get('FieldVsLable', {})  # ID → Display Label
+            field_vs_name = transition_details.get('FieldVsName', {})    # ID → Column Name
             
-            if field_label:
-                field_updates.append({
-                    'field_label': field_label,
-                    'field_value': field_value,
-                    'field_id': update.get('fieldId')  # If available
-                })
+            # Get fields being updated in this transition
+            fields = transition_details.get('Fields', [])
+            
+            # Process each field in the transition
+            for field in fields:
+                # Skip info messages (not actual fields)
+                if field.get('Type') != 'Field':
+                    continue
+                
+                field_id = field.get('Id')
+                if not field_id:
+                    continue
+                
+                # Get label and column name from mappings
+                field_label = field_vs_label.get(field_id)
+                column_name = field_vs_name.get(field_id)
+                
+                if field_label:  # Only include if we have a label
+                    field_updates.append({
+                        'field_id': field_id,
+                        'field_label': field_label,
+                        'column_name': column_name,  # POTENTIALCF201, etc.
+                        'module': field.get('Module'),
+                        'ui_type': field.get('uiType')
+                    })
+            
+            # Also check legacy Actions.Fieldupdate for backwards compatibility
+            actions = transition_details.get('Actions', {})
+            if actions:
+                field_update_actions = actions.get('Fieldupdate', [])
+                
+                for update in field_update_actions:
+                    field_label = update.get('fieldLabel')
+                    field_value = update.get('fieldValue')
+                    
+                    if field_label:
+                        field_updates.append({
+                            'field_label': field_label,
+                            'field_value': field_value,
+                            'field_id': update.get('fieldId'),
+                            'source': 'legacy_action'  # Mark as from old structure
+                        })
+        
+        except Exception as e:
+            logger.error(f"Error extracting field updates: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
         
         return field_updates
     
@@ -205,6 +298,15 @@ class BlueprintsExtractor(BaseExtractor):
         
         enriched_transitions = []
         total_field_updates = 0
+        current_delay = self.base_delay  # Use configured base delay
+        rate_limit_hits = 0
+        successful_requests = 0  # Track for cooldown
+        
+        # Log rate limiting settings
+        if self.cooldown_enabled:
+            logger.info(f"  Rate limiting: {self.base_delay}s delay, cooldown every {self.cooldown_after} requests ({self.cooldown_duration}s)")
+        else:
+            logger.info(f"  Rate limiting: {self.base_delay}s delay (cooldown disabled)")
         
         for i, transition in enumerate(transitions_meta, 1):
             transition_id = transition.get('TransitionId')
@@ -229,25 +331,77 @@ class BlueprintsExtractor(BaseExtractor):
                 # Extract field updates
                 field_updates = self.extract_field_updates_from_transition(transition_details)
                 
+                # Extract function calls from Actions.Deluge
+                function_calls = []
+                try:
+                    actions = transition_details.get('Actions', {})
+                    if actions:
+                        deluge_functions = actions.get('Deluge', [])
+                        
+                        for func in deluge_functions:
+                            function_calls.append({
+                                'function_id': func.get('Id'),
+                                'function_name': func.get('Name'),
+                                'relation_type': func.get('relationType'),  # 0=after, 1=before
+                                'description': func.get('description', '')
+                            })
+                except Exception as e:
+                    logger.error(f"      Error extracting functions: {e}")
+                
                 # Add to transition metadata
                 enriched_transition = {
                     **transition,
                     'transition_details_file': str(transition_filepath.name),
                     'field_updates': field_updates,
-                    'field_update_count': len(field_updates)
+                    'field_update_count': len(field_updates),
+                    'function_calls': function_calls,
+                    'function_call_count': len(function_calls)
                 }
                 
                 enriched_transitions.append(enriched_transition)
                 total_field_updates += len(field_updates)
+                successful_requests += 1  # Track successful requests for cooldown
                 
-                logger.info(f"      [OK] {len(field_updates)} field updates found")
+                # Log what was found
+                if len(field_updates) > 0 or len(function_calls) > 0:
+                    parts = []
+                    if len(field_updates) > 0:
+                        parts.append(f"{len(field_updates)} field updates")
+                    if len(function_calls) > 0:
+                        parts.append(f"{len(function_calls)} function calls")
+                    logger.info(f"      [OK] {', '.join(parts)}")
+                else:
+                    logger.info(f"      [OK] No field updates or functions")
             else:
                 logger.warning(f"      [FAIL] Could not get transition details")
+                # Check if this was likely a rate limit (happens around transition 77)
+                if i >= 70:  # After ~70 transitions, be more careful
+                    rate_limit_hits += 1
+                    current_delay = min(current_delay + 2.0, 10.0)  # Increase delay, max 10s
+                    logger.warning(f"      Possible rate limiting - increasing delay to {current_delay}s")
                 enriched_transitions.append(transition)
             
+            # Check if we need to take a cooldown break
+            # Trigger BEFORE we might hit rate limiting (after every N transitions)
+            if (self.cooldown_enabled and 
+                i > 0 and 
+                i % self.cooldown_after == 0 and
+                i < len(transitions_meta)):  # Don't cooldown on last request
+                logger.info("")
+                logger.info(f"  ========================================")
+                logger.info(f"  COOLDOWN: Completed {i} transitions")
+                logger.info(f"  Pausing for {self.cooldown_duration} seconds ({self.cooldown_duration/60:.1f} minutes)")
+                logger.info(f"  This allows Zoho's rate limit window to reset...")
+                logger.info(f"  ========================================")
+                logger.info("")
+                time.sleep(self.cooldown_duration)
+                logger.info(f"  Cooldown complete - resuming extraction...")
+                logger.info("")
             # Rate limiting - delay between transition requests
-            if i < len(transitions_meta):
-                time.sleep(0.75)  # 750ms delay between requests
+            # Using progressive delay: starts at base_delay, increases if rate limited
+            elif i < len(transitions_meta):
+                logger.info(f"      Waiting {current_delay:.1f}s before next request...")
+                time.sleep(current_delay)
         
         # Update blueprint data with enriched transitions
         blueprint_data['TransitionsMeta'] = enriched_transitions

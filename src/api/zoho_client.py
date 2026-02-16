@@ -1,184 +1,277 @@
 """
-Zoho API Client
-Handles authentication and API requests to Zoho CRM
+Zoho CRM API Client
+Handles authentication and requests to Zoho CRM API with proper header support
 """
 import requests
 import time
-from typing import Dict, Any, Optional
 import logging
+from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
 
 
 class ZohoAPIClient:
-    """Client for interacting with Zoho CRM API"""
+    """
+    Client for making authenticated requests to Zoho CRM API
     
-    BASE_URL = 'https://crm.zoho.com/crm/v2'
+    Handles:
+    - Cookie-based authentication
+    - CSRF token management
+    - Org ID headers
+    - X-Static-Token header (required for some endpoints)
+    - Retry logic with exponential backoff
+    - Rate limiting
+    """
     
-    def __init__(self, cookie: str, csrf_token: str, org_id: str):
+    def __init__(self, cookie: str, csrf_token: str, org_id: str, 
+                 static_token: Optional[str] = None,
+                 max_retries: int = 3, retry_delay: float = 1.0):
         """
-        Initialize Zoho API client
+        Initialize the Zoho API client
         
         Args:
             cookie: Full Cookie header value from browser
             csrf_token: CSRF token (with crmcsrfparam= prefix)
-            org_id: Zoho organization ID
+            org_id: Organization ID
+            static_token: Optional X-Static-Token value (required for some endpoints)
+            max_retries: Maximum number of retry attempts
+            retry_delay: Base delay between retries in seconds
         """
-        self.headers = {
-            'Cookie': cookie,
-            'x-zcsrf-token': csrf_token,
-            'x-crm-org': org_id,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'x-requested-with': 'XMLHttpRequest, XMLHttpRequest'
-        }
+        self.org_id = org_id
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        
+        # Create session
         self.session = requests.Session()
-        self.session.headers.update(self.headers)
         
-    def get(self, endpoint: str, params: Optional[Dict] = None, 
-            retry_count: int = 3, delay: float = 0.5) -> Optional[Dict[str, Any]]:
+        # Parse and set cookies
+        #self._parse_cookies(cookie)
+        #self.session.headers['Cookie'] = cookie
+        
+        # Set standard headers
+        self.session.headers.update({
+            'accept': '*/*',
+            'accept-language': 'en-US,en;q=0.9',
+            'cache-control': 'no-cache',
+            'pragma': 'no-cache',
+            'referer': 'https://crm.zoho.com/',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
+            'x-crm-org': org_id,
+            'x-requested-with': 'XMLHttpRequest',
+            'x-static-version': static_token or '',
+            'x-zcsrf-token': csrf_token,
+            'Cookie': cookie,
+        })  
+        
+        # Add X-Static-Token if provided (CRITICAL for some endpoints like blueprints)
+        if static_token:
+            self.session.headers['x-static-version'] = static_token
+            logger.info(f"Added X-Static-Token header: {static_token}")
+        else:
+            logger.warning("No static_token provided - some endpoints may fail")
+        
+        logger.info(f"Initialized Zoho API client for org {org_id}")
+        logger.info(f"Parsed {len(self.session.cookies)} cookies")
+        logger.info(f"Headers: {list(self.session.headers.keys())}")
+    
+    def _parse_cookies(self, cookie_string: str):
         """
-        Make GET request to Zoho API with retry logic
+        Parse cookie string and add to session
         
         Args:
-            endpoint: API endpoint (will be appended to BASE_URL)
+            cookie_string: Cookie header value from browser
+        """
+        for cookie in cookie_string.split('; '):
+            if '=' in cookie:
+                name, value = cookie.split('=', 1)
+                self.session.cookies.set(name, value, domain='.zoho.com')
+    
+    def get(self, url: str, params: Optional[Dict[str, Any]] = None, 
+            **kwargs) -> requests.Response:
+        """
+        Make GET request with retry logic
+        
+        Args:
+            url: Request URL
             params: Query parameters
-            retry_count: Number of retries on failure
-            delay: Delay between retries in seconds
+            **kwargs: Additional arguments for requests.get()
             
         Returns:
-            JSON response data or None on failure
+            Response object
         """
-        url = f"{self.BASE_URL}/{endpoint.lstrip('/')}"
-        
-        for attempt in range(retry_count):
+        for attempt in range(self.max_retries):
             try:
-                response = self.session.get(url, params=params)
+                response = self.session.get(url, params=params, **kwargs)
                 
-                if response.status_code == 200:
-                    return response.json()
-                elif response.status_code == 429:  # Rate limit
-                    logger.warning(f"Rate limited, waiting {delay * 2} seconds...")
-                    time.sleep(delay * 2)
-                    continue
-                else:
-                    logger.error(f"Error {response.status_code}: {response.text}")
-                    if attempt < retry_count - 1:
-                        time.sleep(delay)
-                        continue
-                    return None
+                # Log response details
+                logger.debug(f"GET {url}")
+                logger.debug(f"Status: {response.status_code}")
+                logger.debug(f"Content-Type: {response.headers.get('Content-Type')}")
+                
+                # Check if we got HTML instead of JSON (auth issue)
+                content_type = response.headers.get('Content-Type', '')
+                if 'html' in content_type.lower() and 'json' not in content_type.lower():
+                    logger.warning(f"Got HTML response (expected JSON) - possible auth issue")
                     
-            except requests.exceptions.RequestException as e:
-                logger.error(f"Request failed: {e}")
-                if attempt < retry_count - 1:
-                    time.sleep(delay)
-                    continue
-                return None
-                
-        return None
-    
-    def post(self, endpoint: str, data: Optional[Dict] = None,
-             retry_count: int = 3, delay: float = 0.5) -> Optional[Dict[str, Any]]:
-        """
-        Make POST request to Zoho API with retry logic
-        
-        Args:
-            endpoint: API endpoint
-            data: POST data
-            retry_count: Number of retries
-            delay: Delay between retries
-            
-        Returns:
-            JSON response or None
-        """
-        url = f"{self.BASE_URL}/{endpoint.lstrip('/')}"
-        
-        for attempt in range(retry_count):
-            try:
-                response = self.session.post(url, data=data)
+                    # Check if it's a login page
+                    if 'login' in response.text.lower() or 'signin' in response.text.lower():
+                        logger.error("Got login page - credentials expired/invalid")
+                        raise Exception("Authentication failed - credentials expired")
                 
                 if response.status_code == 200:
-                    return response.json()
+                    return response
                 elif response.status_code == 429:
-                    logger.warning(f"Rate limited, waiting {delay * 2} seconds...")
-                    time.sleep(delay * 2)
-                    continue
+                    # Rate limited
+                    wait_time = self.retry_delay * (2 ** attempt)
+                    logger.warning(f"Rate limited (429). Waiting {wait_time}s before retry {attempt + 1}/{self.max_retries}")
+                    time.sleep(wait_time)
+                elif response.status_code >= 500:
+                    # Server error
+                    wait_time = self.retry_delay * (2 ** attempt)
+                    logger.warning(f"Server error ({response.status_code}). Waiting {wait_time}s before retry {attempt + 1}/{self.max_retries}")
+                    time.sleep(wait_time)
                 else:
-                    logger.error(f"Error {response.status_code}: {response.text}")
-                    if attempt < retry_count - 1:
-                        time.sleep(delay)
-                        continue
-                    return None
+                    # Other error - don't retry
+                    logger.error(f"Request failed with status {response.status_code}")
+                    return response
                     
             except requests.exceptions.RequestException as e:
-                logger.error(f"Request failed: {e}")
-                if attempt < retry_count - 1:
-                    time.sleep(delay)
-                    continue
-                return None
-                
-        return None
+                wait_time = self.retry_delay * (2 ** attempt)
+                logger.warning(f"Request exception: {e}. Waiting {wait_time}s before retry {attempt + 1}/{self.max_retries}")
+                time.sleep(wait_time)
+        
+        # All retries failed
+        raise Exception(f"Failed after {self.max_retries} retries")
     
-    def paginated_get(self, endpoint: str, start_param: str = 'start',
-                     limit: int = 50, max_items: Optional[int] = None,
-                     extra_params: Optional[Dict[str, str]] = None) -> list:
+    def post(self, url: str, data: Optional[Dict[str, Any]] = None,
+             json_data: Optional[Dict[str, Any]] = None,
+             **kwargs) -> requests.Response:
         """
-        Get paginated results from Zoho API
+        Make POST request with retry logic
         
         Args:
-            endpoint: API endpoint
-            start_param: Name of the pagination start parameter
-            limit: Items per page
-            max_items: Maximum items to fetch (None = all)
-            extra_params: Additional query parameters to include
+            url: Request URL
+            data: Form data
+            json_data: JSON data
+            **kwargs: Additional arguments for requests.post()
             
         Returns:
-            List of all items from all pages
+            Response object
         """
-        all_items = []
-        start = 1
-        page = 1
+        for attempt in range(self.max_retries):
+            try:
+                if json_data:
+                    response = self.session.post(url, json=json_data, **kwargs)
+                else:
+                    response = self.session.post(url, data=data, **kwargs)
+                
+                logger.debug(f"POST {url}")
+                logger.debug(f"Status: {response.status_code}")
+                
+                if response.status_code == 200:
+                    return response
+                elif response.status_code == 429:
+                    wait_time = self.retry_delay * (2 ** attempt)
+                    logger.warning(f"Rate limited. Waiting {wait_time}s before retry {attempt + 1}/{self.max_retries}")
+                    time.sleep(wait_time)
+                elif response.status_code >= 500:
+                    wait_time = self.retry_delay * (2 ** attempt)
+                    logger.warning(f"Server error. Waiting {wait_time}s before retry {attempt + 1}/{self.max_retries}")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Request failed with status {response.status_code}")
+                    return response
+                    
+            except requests.exceptions.RequestException as e:
+                wait_time = self.retry_delay * (2 ** attempt)
+                logger.warning(f"Request exception: {e}. Waiting {wait_time}s before retry {attempt + 1}/{self.max_retries}")
+                time.sleep(wait_time)
+        
+        raise Exception(f"Failed after {self.max_retries} retries")
+    
+    def paginated_get(self, url: str, params: Optional[Dict[str, Any]] = None,
+                      page_param: str = 'page', start_page: int = 1,
+                      max_pages: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Make paginated GET requests
+        
+        Args:
+            url: Base URL
+            params: Query parameters
+            page_param: Name of the page parameter
+            start_page: Starting page number
+            max_pages: Maximum number of pages to fetch
+            
+        Returns:
+            List of all results from all pages
+        """
+        all_results = []
+        current_page = start_page
+        params = params or {}
         
         while True:
-            params = {start_param: start, 'limit': limit}
-            
-            # Add any extra parameters
-            if extra_params:
-                params.update(extra_params)
-            
-            logger.info(f"Fetching page {page} (items {start}-{start+limit-1})...")
-            data = self.get(endpoint, params=params)
-            
-            if not data:
-                logger.warning("No data returned, stopping pagination")
+            if max_pages and current_page >= start_page + max_pages:
                 break
             
-            # Try to extract items from different possible response structures
-            items = None
-            for key in ['functions', 'workflows', 'blueprints', 'modules', 'data']:
-                if key in data:
-                    items = data[key]
+            params[page_param] = current_page
+            response = self.get(url, params=params)
+            
+            if response.status_code != 200:
+                logger.error(f"Pagination failed on page {current_page}")
+                break
+            
+            try:
+                data = response.json()
+                
+                # Zoho typically returns data in a 'data' field
+                page_results = data.get('data', [])
+                
+                if not page_results:
                     break
-            
-            if not items or len(items) == 0:
-                logger.info("No more items found")
+                
+                all_results.extend(page_results)
+                logger.info(f"Page {current_page}: {len(page_results)} results")
+                
+                # Check if there are more pages
+                info = data.get('info', {})
+                if not info.get('more_records', False):
+                    break
+                
+                current_page += 1
+                time.sleep(self.retry_delay)  # Rate limiting
+                
+            except Exception as e:
+                logger.error(f"Error parsing page {current_page}: {e}")
                 break
-            
-            all_items.extend(items)
-            logger.info(f"  Found {len(items)} items (total: {len(all_items)})")
-            
-            # Check if we've hit the max
-            if max_items and len(all_items) >= max_items:
-                logger.info(f"Reached max items limit: {max_items}")
-                break
-            
-            # Check if we're done
-            if len(items) < limit:
-                logger.info("Received fewer than limit - last page")
-                break
-            
-            start += limit
-            page += 1
-            time.sleep(0.5)  # Be nice to the API
         
-        return all_items
+        logger.info(f"Paginated fetch complete: {len(all_results)} total results")
+        return all_results
+
+
+def create_client_from_config(config: Dict[str, Any]) -> ZohoAPIClient:
+    """
+    Create a ZohoAPIClient from a configuration dictionary
+    
+    Args:
+        config: Configuration dictionary with zoho_credentials and extraction settings
+        
+    Returns:
+        Configured ZohoAPIClient instance
+    """
+    creds = config['zoho_credentials']
+    extraction_settings = config.get('extraction', {})
+    
+    # Get static_token if present (CRITICAL for blueprint extraction)
+    static_token = creds.get('static_token')
+    if not static_token:
+        logger.warning("No static_token in config - blueprint extraction may fail!")
+        logger.warning("To fix: Add 'static_token: \"YOUR_TOKEN\"' to zoho_credentials in your YAML")
+    
+    return ZohoAPIClient(
+        cookie=creds['cookie'],
+        csrf_token=creds['csrf_token'],
+        org_id=creds['org_id'],
+        static_token=static_token,  # Pass static_token to client
+        max_retries=extraction_settings.get('max_retries', 3),
+        retry_delay=extraction_settings.get('retry_delay', 1.0)
+    )
