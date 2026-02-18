@@ -1,0 +1,18 @@
+{
+  "accept": "application/json",
+  "accept-language": "en-US,en;q=0.9",
+  "cache-control": "no-cache",
+  "content-type": "application/json; charset=utf-8",
+  "pragma": "no-cache",
+  "priority": "u=1, i",
+  "referer": "https://recruit.zoho.com/recruit/org645207109/ShowSetup.do?tab=devSpace&subTab=functionList",
+  "sec-ch-ua": "\"Not:A-Brand\";v=\"99\", \"Microsoft Edge\";v=\"145\", \"Chromium\";v=\"145\"",
+  "sec-ch-ua-mobile": "?0",
+  "sec-ch-ua-platform": "\"Windows\"",
+  "sec-fetch-dest": "empty",
+  "sec-fetch-mode": "cors",
+  "sec-fetch-site": "same-origin",
+  "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0",
+  "x-recruit-org": "645207109",
+  "x-zcsrf-token": "crmcsrfparam=e4b335870c4b7108a0b5469769d97f509a085af282e3f7729fdcd679f3d662574e469068cb9c5714a5f788bccbb699e73294827332ce34cd0245854495096131"
+}

@@ -76,12 +76,12 @@ class BlueprintsExtractor(BaseExtractor):
             response = self.client.session.get(url, params=params)
             
             logger.info(f"Response status: {response.status_code}")
-            logger.info(f"Response content-type: {response.headers.get('Content-Type', 'unknown')}")
             
             if response.status_code == 200:
                 # Check if we got HTML instead of JSON (credentials issue)
-                content_type = response.headers.get('Content-Type', '')
-                if 'html' in content_type.lower():
+                # Note: CurlResponse doesn't capture response headers,
+                # so we check the body text directly
+                if response.text and '<html' in response.text[:200].lower():
                     logger.error("Got HTML response instead of JSON - credentials likely expired")
                     logger.error(f"Response preview: {response.text[:500]}")
                     return []
@@ -165,8 +165,9 @@ class BlueprintsExtractor(BaseExtractor):
             
             if response.status_code == 200:
                 # Check if we got HTML instead of JSON (rate limiting)
-                content_type = response.headers.get('Content-Type', '')
-                if 'html' in content_type.lower():
+                # Note: CurlResponse doesn't capture response headers,
+                # so we check the body text directly
+                if response.text and '<html' in response.text[:200].lower():
                     logger.warning(f"      Rate limited! Got HTML instead of JSON")
                     logger.warning(f"      Sleeping 5 seconds and retrying...")
                     import time
@@ -218,8 +219,8 @@ class BlueprintsExtractor(BaseExtractor):
         
         try:
             # Get field mappings (note: FieldVsLable has typo in Zoho API)
-            field_vs_label = transition_details.get('FieldVsLable', {})  # ID → Display Label
-            field_vs_name = transition_details.get('FieldVsName', {})    # ID → Column Name
+            field_vs_label = transition_details.get('FieldVsLable', {})  # ID -> Display Label
+            field_vs_name = transition_details.get('FieldVsName', {})    # ID -> Column Name
             
             # Get fields being updated in this transition
             fields = transition_details.get('Fields', [])

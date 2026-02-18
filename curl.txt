@@ -1,0 +1,18 @@
+curl 'https://recruit.zoho.com/recruit/v2/settings/functions?type=org&start=1&limit=50' \
+  -H 'accept: application/json' \
+  -H 'accept-language: en-US,en;q=0.9' \
+  -H 'cache-control: no-cache' \
+  -H 'content-type: application/json; charset=utf-8' \
+  -b 'siq1.zohocares-_zldp=dMx6e5HtWrWbtCgLgu5PgD6nYdkGnxworLmo65kLXYRlfT1dDrvAlmoBSaP3TBdMPbiEK4uYduA%3D; siq1.zohocares-_uuid=b6397134-e1af-489c-af1f-9e9f20f3644a_a300; ZohoMarkRef="https://catalyst.zoho.com/"; ZohoMarkSrc="direct:catalyst|direct:catalyst|direct:catalyst"; zps-tgr-dts=sc%3D4-expAppOnNewSession%3D%5B%5D-pc%3D1-sesst%3D1771432758959; zalb_2ebb1802fb=f9f63412c7ede15814433e2eab26b40a; CROSSCDNID=abf0eab86c6416fdeb8542ad0dc927ed65155dd2429607552cb96c1b1060d77ce30a2b6bd747c57030f9b1bf22d885ed; CROSSCDNCOUNTRY=US; zalb_3309580ed5=b1a80d02702c1bbb10e1bdc6c6bb8677; zalb_8b7213828d=12e72725b02392af3450b3068735156e; siq1.zohocares-_zldp=dMx6e5HtWrWbtCgLgu5PgD6nYdkGnxworLmo65kLXYRlfT1dDrvAlmoBSaP3TBdMPbiEK4uYduA%3D; siq1.zohocares-_zldt=ea360fa4-11f6-43f7-bf8f-1fe363e93655-2; drecn=ca3d355c23385d50730b849570053e37ccd0ee7e4e5d99a566991039fe4211df6f181f00fcc7dcab3c6b188a27808b52c4705a3bab7223886b40c5ea625e89b7; showEditorLeftPane=undefined; __Secure-iamsdt=0.EnQSMML1HQzduLHUh5Su4RAPOWAartXqFNreVmSZl37u-9WYwA1Bp8gOV2Gob5NB5ehvuhpAoeAjFTUEuUQuthdtx8UyqUFCLFX8w8Igqa6-X2Z_Z95S8WpivIMnrCNpocRXfEQxunrIIaA77zwAbp7d6W_f6A; _iamadt=c2f51d0cddb8b1d48794aee1100f39601aaed5ea14dade566499977eeefbd598c00d41a7c80e5761a86f9341e5e86fba; _iambdt=a1e023153504b9442eb6176dc7c532a941422c55fcc3c220a9aebe5f667f67de52f16a62bc8327ac2369a1c4577c4431ba7ac821a03bef3c006e9edde96fdfe8; crmcsr=e4b335870c4b7108a0b5469769d97f509a085af282e3f7729fdcd679f3d662574e469068cb9c5714a5f788bccbb699e73294827332ce34cd0245854495096131; CT_CSRF_TOKEN=e4b335870c4b7108a0b5469769d97f509a085af282e3f7729fdcd679f3d662574e469068cb9c5714a5f788bccbb699e73294827332ce34cd0245854495096131; wms-tkp-token=892084811-732c66a9-2046cb9523a925ce4573705a1e605a0a; CSRF_TOKEN=e4b335870c4b7108a0b5469769d97f509a085af282e3f7729fdcd679f3d662574e469068cb9c5714a5f788bccbb699e73294827332ce34cd0245854495096131; JSESSIONID=F1135067FD4505A4E36D90E3A2E34C1A; com_chat_owner=1771453498454; com_avcliq_owner=1771453498454; zalb_zid=645207109' \
+  -H 'pragma: no-cache' \
+  -H 'priority: u=1, i' \
+  -H 'referer: https://recruit.zoho.com/recruit/org645207109/ShowSetup.do?tab=devSpace&subTab=functionList' \
+  -H 'sec-ch-ua: "Not:A-Brand";v="99", "Microsoft Edge";v="145", "Chromium";v="145"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'sec-fetch-dest: empty' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0' \
+  -H 'x-recruit-org: 645207109' \
+  -H 'x-zcsrf-token: crmcsrfparam=e4b335870c4b7108a0b5469769d97f509a085af282e3f7729fdcd679f3d662574e469068cb9c5714a5f788bccbb699e73294827332ce34cd0245854495096131'
